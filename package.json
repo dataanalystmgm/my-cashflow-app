@@ -9,13 +9,15 @@
     "lint": "next lint"
   },
   "dependencies": {
-  "firebase": "^10.0.0",
-  "next": "15.1.0",
-  "react": "19.0.0",
-  "react-dom": "19.0.0",
-  "recharts": "^2.15.0",
-  "lucide-react": "latest"
-},
+    "firebase": "^10.0.0",
+    "lucide-react": "latest",
+    "next": "15.1.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "recharts": "^2.15.0",
+    "sweetalert2": "^11.26.21",
+    "sweetalert2-react-content": "^5.1.1"
+  },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/react": "^18.0.0",
