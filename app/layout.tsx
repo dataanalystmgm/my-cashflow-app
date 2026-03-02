@@ -4,12 +4,11 @@ import { Inter } from 'next/font/google'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata = {
-  title: 'My Cashflow',
-  description: 'Aplikasi pencatat keuangan pribadi',
+  title: "My Cashflow App",
   icons: {
-    icon: '/favicon.svg', // Menggunakan SVG sebagai ikon
+    icon: `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💰</text></svg>`,
   },
-}
+};
 
 export default function RootLayout({
   children,
