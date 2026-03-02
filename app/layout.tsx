@@ -6,6 +6,9 @@ const inter = Inter({ subsets: ['latin'] })
 export const metadata = {
   title: 'My Cashflow',
   description: 'Aplikasi pencatat keuangan pribadi',
+  icons: {
+    icon: '/favicon.svg', // Menggunakan SVG sebagai ikon
+  },
 }
 
 export default function RootLayout({
