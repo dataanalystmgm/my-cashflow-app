@@ -1,18 +1,20 @@
 "use client"
 import { useState, useEffect } from 'react';
 import { db, auth } from '@/lib/firebase';
-import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, getDocs, setDoc, doc } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import Card from '@/components/Card';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import Link from 'next/link';
+import Swal from 'sweetalert2'; // Pastikan sudah install sweetalert2
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
 
 export default function ReportPage() {
   const [data, setData] = useState<any[]>([]);
-  const [budgets, setBudgets] = useState<any[]>([]); // State untuk budget
+  const [budgets, setBudgets] = useState<any[]>([]);
   const [user, setUser] = useState<any>(null);
+  const [showNewMonthModal, setShowNewMonthModal] = useState(false);
 
   const currentMonth = new Date().toISOString().slice(0, 7);
 
@@ -21,17 +23,99 @@ export default function ReportPage() {
     return () => unsubscribeAuth();
   }, []);
 
+  // --- LOGIKA NOTIFIKASI & BULAN BARU ---
+  useEffect(() => {
+    const checkDateLogics = () => {
+      const today = new Date();
+      const currentDate = today.getDate();
+      const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+      const currentMonthStr = today.toISOString().slice(0, 7);
+      const lastSeenMonth = localStorage.getItem('last_seen_month');
+
+      // 1. Notifikasi H-2 Akhir Bulan
+      if (currentDate >= lastDayOfMonth - 1) {
+        const hasNotified = localStorage.getItem(`notif_end_${currentMonthStr}`);
+        if (!hasNotified) {
+          Swal.fire({
+            title: 'Siapkan Budget!',
+            text: 'Sudah H-2 akhir bulan nih. Mau atur jatah untuk bulan depan sekarang?',
+            icon: 'info',
+            showCancelButton: true,
+            confirmButtonText: 'Ya, Atur',
+            cancelButtonText: 'Nanti saja'
+          }).then((result) => {
+            if (result.isConfirmed) window.location.href = '/settings';
+          });
+          localStorage.setItem(`notif_end_${currentMonthStr}`, 'true');
+        }
+      }
+
+      // 2. Cek Tanggal 1 Bulan Baru
+      if (currentDate === 1 && lastSeenMonth !== currentMonthStr) {
+        setShowNewMonthModal(true);
+        // Kita simpan last_seen setelah user memilih di modal
+      }
+    };
+
+    checkDateLogics();
+  }, []);
+
+  const handleCarryOverBudget = async () => {
+    if (!user) return;
+    
+    const today = new Date();
+    const currentMonthStr = today.toISOString().slice(0, 7);
+    
+    // Hitung bulan lalu
+    const lastMonthDate = new Date();
+    lastMonthDate.setMonth(today.getMonth() - 1);
+    const lastMonthStr = lastMonthDate.toISOString().slice(0, 7);
+
+    try {
+      const q = query(
+        collection(db, "budgets"),
+        where("userId", "==", user.uid),
+        where("month", "==", lastMonthStr)
+      );
+      
+      const snapshot = await getDocs(q);
+      if (snapshot.empty) {
+        Swal.fire('Info', 'Tidak ada budget bulan lalu yang bisa disalin.', 'info');
+      } else {
+        const batchPromises = snapshot.docs.map(item => {
+          const bData = item.data();
+          const newId = `${user.uid}_${currentMonthStr}_${bData.categoryName.replace(/\s+/g, '_')}`;
+          return setDoc(doc(db, "budgets", newId), {
+            ...bData,
+            month: currentMonthStr
+          });
+        });
+        await Promise.all(batchPromises);
+        Swal.fire('Berhasil!', 'Budget bulan lalu telah disalin.', 'success');
+      }
+      
+      localStorage.setItem('last_seen_month', currentMonthStr);
+      setShowNewMonthModal(false);
+    } catch (err) {
+      Swal.fire('Error', 'Gagal menyalin budget', 'error');
+    }
+  };
+
+  const handleResetBudget = () => {
+    localStorage.setItem('last_seen_month', currentMonth);
+    setShowNewMonthModal(false);
+    window.location.href = '/settings';
+  };
+
   useEffect(() => {
     if (!user) return;
     
-    // 1. Ambil Transaksi
     const qTrans = query(
       collection(db, "transactions"), 
       where("userId", "==", user.uid),
       orderBy("createdAt", "desc")
     );
     
-    // 2. Ambil Budget Bulan Ini
     const qBug = query(
       collection(db, "budgets"),
       where("userId", "==", user.uid),
@@ -44,7 +128,6 @@ export default function ReportPage() {
     return () => { unsubTrans(); unsubBug(); };
   }, [user]);
 
-  // Logika Pengeluaran per Kategori untuk Pie Chart
   const expenseData = data
     .filter(t => t.type === 'expense')
     .reduce((acc: any, curr) => {
@@ -54,7 +137,6 @@ export default function ReportPage() {
       return acc;
     }, []);
 
-  // Logika Analisis Budget
   const budgetAnalysis = budgets.map(b => {
     const actual = data
       .filter(t => t.category === b.categoryName && t.type === 'expense')
@@ -67,7 +149,33 @@ export default function ReportPage() {
 
   return (
     <main className="max-w-2xl mx-auto p-4 space-y-6 min-h-screen bg-gray-50 pb-20">
-      {/* HEADER DENGAN TOMBOL SETTINGS */}
+      
+      {/* MODAL AWAL BULAN */}
+      {showNewMonthModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[99] p-6 backdrop-blur-sm">
+          <Card className="max-w-xs w-full text-center shadow-2xl border-0 animate-in fade-in zoom-in duration-300">
+            <div className="text-4xl mb-4">🗓️</div>
+            <h2 className="text-xl font-bold mb-2 text-gray-800">Bulan Baru!</h2>
+            <p className="text-sm text-gray-500 mb-6">Mau melanjutkan budget bulan lalu atau buat baru?</p>
+            <div className="space-y-3">
+              <button 
+                onClick={handleCarryOverBudget}
+                className="w-full bg-blue-600 text-white py-3 rounded-2xl font-bold shadow-lg shadow-blue-200 active:scale-95 transition"
+              >
+                Salin Budget Lalu
+              </button>
+              <button 
+                onClick={handleResetBudget}
+                className="w-full bg-gray-100 text-gray-700 py-3 rounded-2xl font-bold active:scale-95 transition"
+              >
+                Buat Baru (Reset)
+              </button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* HEADER */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link href="/" className="bg-white p-2 rounded-full shadow-sm hover:bg-gray-100 transition">←</Link>
@@ -128,7 +236,7 @@ export default function ReportPage() {
         </div>
       </Card>
 
-      {/* Grafik Pie Fleksibel */}
+      {/* Grafik Pie */}
       <Card className="flex flex-col">
         <h3 className="font-bold text-gray-700 mb-4 text-center">Proporsi Pengeluaran</h3>
         {expenseData.length > 0 ? (
